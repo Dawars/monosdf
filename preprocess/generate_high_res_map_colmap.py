@@ -5,6 +5,7 @@ import argparse
 import math
 from PIL import Image, ImageOps
 from PIL.Image import Resampling
+from torchvision.transforms import InterpolationMode
 
 from tqdm import tqdm
 import numpy as np
@@ -13,7 +14,7 @@ import matplotlib.pyplot as plt
 import torch
 from torchvision import transforms
 
-DEBUG = False
+DEBUG = True
 
 map_location = (lambda storage, loc: storage.cuda()) if torch.cuda.is_available() else torch.device('cpu')
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -209,7 +210,9 @@ def process_image(image_path: Path, out_dir: Path):
 
     patches = {}
     _image = Image.open(image_path).convert('RGB')
+    orig_size = _image.size
 
+    _image.thumbnail((1400, 1400))
     W, H = _image.size
 
     x = math.ceil(W / offset)
@@ -233,9 +236,8 @@ def process_image(image_path: Path, out_dir: Path):
         for i in range(x - 1):
             # crop images
             image_patch = image_cv[j * offset:j * offset + size, i * offset:i * offset + size, :]
-            if DEBUG:
-                print(image_patch.shape)
-                patches[(i, j)] = image_patch
+            # if DEBUG:
+            #     patches[(i, j)] = image_patch
 
                 # image_patch.save()
             # inference
@@ -305,10 +307,14 @@ def process_image(image_path: Path, out_dir: Path):
 
     depth_top = (depth_top - depth_top.min()) / (depth_top.max() - depth_top.min())
     depth_top = depth_top[:, :H, :W]
+    depth_top = depth_top[0].numpy()
+
+    if orig_size != (W, H):
+        depth_top = np.array(Image.fromarray(depth_top).resize(orig_size, resample=Resampling.BICUBIC))
 
     if DEBUG:
-        plt.imsave(out_path_depth.with_suffix('.png'), depth_top[0].numpy(), cmap='viridis')
-    np.save(out_path_depth.with_suffix('.npy'), depth_top.detach().cpu().numpy()[0])
+        plt.imsave(out_path_depth.with_suffix('.png'), depth_top, cmap='viridis')
+    np.save(out_path_depth.with_suffix('.npy'), depth_top)
 
     # normal
     normals_row = []
@@ -356,8 +362,14 @@ def process_image(image_path: Path, out_dir: Path):
 
     normal_top = normal_top[:, :H, :W]
 
-    plt.imsave(out_path_normal.with_suffix('.png'), np.moveaxis(normal_top, [0, 1, 2], [2, 0, 1]) * 0.5 + 0.5)
-    np.save(out_path_normal.with_suffix('.npy'), (normal_top + 1.) / 2.)
+    if orig_size != (W, H):
+        normal_top = (torch.tensor(normal_top) + 1.) / 2.
+        normal_top = trans_topil(normal_top)
+        normal_top = normal_top.resize(orig_size, resample=Resampling.NEAREST)
+
+    if DEBUG:
+        normal_top.save(out_path_normal.with_suffix('.png'))
+    np.save(out_path_normal.with_suffix('.npy'), np.array(normal_top))
 
 
 def load_model(mode: str):
@@ -404,7 +416,7 @@ def main(args):
     data_root = Path(args.input_path)
 
     out_path_prefix = Path(args.output_path)  # result will be saved to path/scene/{normal|depth}
-    scenes = ['brandenburg_gate', 'pantheon_exterior']
+    scenes = ['split_0']
 
     for scene in scenes:
         process_scene(data_root, scene, out_path_prefix)
