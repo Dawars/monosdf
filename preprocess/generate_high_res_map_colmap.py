@@ -1,4 +1,5 @@
 # adapted from https://github.com/EPFL-VILAB/omnidata
+import sys
 from pathlib import Path
 import argparse
 import math
@@ -11,8 +12,6 @@ import cv2
 import matplotlib.pyplot as plt
 import torch
 from torchvision import transforms
-from modules.midas.dpt_depth import DPTDepthModel
-from data.transforms import get_transform
 
 DEBUG = False
 
@@ -307,7 +306,8 @@ def process_image(image_path: Path, out_dir: Path):
     depth_top = (depth_top - depth_top.min()) / (depth_top.max() - depth_top.min())
     depth_top = depth_top[:, :H, :W]
 
-    plt.imsave(out_path_depth.with_suffix('.png'), depth_top[0].numpy(), cmap='viridis')
+    if DEBUG:
+        plt.imsave(out_path_depth.with_suffix('.png'), depth_top[0].numpy(), cmap='viridis')
     np.save(out_path_depth.with_suffix('.npy'), depth_top.detach().cpu().numpy()[0])
 
     # normal
@@ -361,6 +361,8 @@ def process_image(image_path: Path, out_dir: Path):
 
 
 def load_model(mode: str):
+    from modules.midas.dpt_depth import DPTDepthModel
+
     if mode in ["normal", "depth"]:
         pretrained_weights_path = root_dir + f'omnidata_dpt_{mode}_v2.ckpt'
         model = DPTDepthModel(backbone='vitb_rn50_384', num_channels=1 if mode == 'depth' else 3)  # DPT Hybrid
@@ -427,6 +429,9 @@ if __name__ == '__main__':
 
     root_dir = args.pretrained_models
     omnidata_path = args.omnidata_path
+
+    sys.path.append(args.omnidata_path)
+    from data.transforms import get_transform
 
     net_normal = load_model("normal")
     net_depth = load_model("depth")
