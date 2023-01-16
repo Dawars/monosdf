@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 import torch
 from torchvision import transforms
 
-DEBUG = True
+DEBUG = False
 
 map_location = (lambda storage, loc: storage.cuda()) if torch.cuda.is_available() else torch.device('cpu')
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -369,7 +369,9 @@ def process_image(image_path: Path, out_dir: Path):
 
     if DEBUG:
         normal_top.save(out_path_normal.with_suffix('.png'))
-    np.save(out_path_normal.with_suffix('.npy'), np.array(normal_top))
+
+    normal_top = np.transpose(np.array(normal_top), [2, 0, 1])  # HWC -> CHW
+    np.save(out_path_normal.with_suffix('.npy'), normal_top)
 
 
 def load_model(mode: str):
