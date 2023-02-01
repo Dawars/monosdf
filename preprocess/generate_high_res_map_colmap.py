@@ -316,6 +316,8 @@ def process_image(image_path: Path, out_dir: Path):
         plt.imsave(out_path_depth.with_suffix('.viz.png'), depth_top, cmap='viridis')
 
     np.save(out_path_depth.with_suffix('.npy'), depth_top)
+    depth_top_cv = np.uint16(depth_top * (2 ** 16 - 1))
+    cv2.imwrite(str(out_path_depth.with_suffix('.png')), depth_top_cv)
 
     # normal
     normals_row = []
