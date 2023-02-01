@@ -313,7 +313,7 @@ def process_image(image_path: Path, out_dir: Path):
         depth_top = np.array(Image.fromarray(depth_top).resize(orig_size, resample=Resampling.BICUBIC))
 
     if DEBUG:  # todo different dir
-        plt.imsave(out_path_depth.with_suffix('_viz.png'), depth_top, cmap='viridis')
+        plt.imsave(out_path_depth.with_suffix('.viz.png'), depth_top, cmap='viridis')
 
     np.save(out_path_depth.with_suffix('.npy'), depth_top)
 
@@ -362,17 +362,18 @@ def process_image(image_path: Path, out_dir: Path):
     normal_top = (R @ normal_top.reshape(3, -1)).reshape(normal_top.shape)
 
     normal_top = normal_top[:, :H, :W]
-    normal_top = (torch.tensor(normal_top) + 1.) / 2.
-    normal_top = trans_topil(normal_top)
+    normal_top = (normal_top + 1.) / 2.
+    normal_top = np.transpose(normal_top, [1, 2, 0])  # HWC float opencv
 
-    if orig_size != (W, H):
-        normal_top = normal_top.resize(orig_size, resample=Resampling.NEAREST)
+    if orig_size != (W, H):  # todo test this
+        normal_top = cv2.resize(normal_top, orig_size, interpolation=cv2.INTER_NEAREST)
 
     if DEBUG:
-        normal_top.save(out_path_normal.with_suffix('.png'))
+        cv2.imwrite(str(out_path_normal.with_suffix('.png')), np.uint8(normal_top*255))  # todo rgb or bgr?
+        # normal_top.save(out_path_normal.with_suffix('.png'))
 
-    normal_top = np.transpose(np.array(normal_top), [2, 0, 1])  # HWC -> CHW
-    np.save(out_path_normal.with_suffix('.npy'), normal_top)
+    normal_top = np.transpose(normal_top, [2, 0, 1])  # HWC -> CHW
+    np.save(out_path_normal.with_suffix('.npy'), normal_top)  # [0,1] float
 
 
 def load_model(mode: str):
