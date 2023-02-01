@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 import torch
 from torchvision import transforms
 
-DEBUG = False
+DEBUG = True
 
 map_location = (lambda storage, loc: storage.cuda()) if torch.cuda.is_available() else torch.device('cpu')
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -312,8 +312,9 @@ def process_image(image_path: Path, out_dir: Path):
     if orig_size != (W, H):
         depth_top = np.array(Image.fromarray(depth_top).resize(orig_size, resample=Resampling.BICUBIC))
 
-    if DEBUG:
-        plt.imsave(out_path_depth.with_suffix('.png'), depth_top, cmap='viridis')
+    if DEBUG:  # todo different dir
+        plt.imsave(out_path_depth.with_suffix('_viz.png'), depth_top, cmap='viridis')
+
     np.save(out_path_depth.with_suffix('.npy'), depth_top)
 
     # normal
@@ -361,10 +362,10 @@ def process_image(image_path: Path, out_dir: Path):
     normal_top = (R @ normal_top.reshape(3, -1)).reshape(normal_top.shape)
 
     normal_top = normal_top[:, :H, :W]
+    normal_top = (torch.tensor(normal_top) + 1.) / 2.
+    normal_top = trans_topil(normal_top)
 
     if orig_size != (W, H):
-        normal_top = (torch.tensor(normal_top) + 1.) / 2.
-        normal_top = trans_topil(normal_top)
         normal_top = normal_top.resize(orig_size, resample=Resampling.NEAREST)
 
     if DEBUG:
@@ -404,7 +405,7 @@ def process_scene(data_root: Path, scene: str, out_path_prefix: Path):
 
     extensions = ['jpg', 'jpeg', 'JPG', 'JPEG', 'png', 'PNG']
     for ext in extensions:
-        paths.extend((data_root / scene / image_dir).glob(f"*.{ext}"))
+        paths.extend((data_root / scene / image_dir).glob(f"[!.]*.{ext}"))
     paths = sorted(paths)
     out_path = out_path_prefix / scene
 
@@ -418,7 +419,7 @@ def main(args):
     data_root = Path(args.input_path)
 
     out_path_prefix = Path(args.output_path)  # result will be saved to path/scene/{normal|depth}
-    scenes = ['split_0']
+    scenes = ['brandenburg_gate', 'pantheon_exterior']
 
     for scene in scenes:
         process_scene(data_root, scene, out_path_prefix)
@@ -433,13 +434,19 @@ if __name__ == '__main__':
     parser.add_argument('--pretrained-models', default='../omnidata/omnidata_tools/torch/pretrained_models/',
                         help="path to pretrained models")
 
-    parser.add_argument('--input-path', type=str, default='./data/heritage/',
+    parser.add_argument('--input-path', type=str, default='/home/dawars/personal_projects/sdfstudio/data/heritage/',
                         help="Path to root of phototourism datasets")
 
-    parser.add_argument('--output-path', type=str, default='./data/monosdf/',
+    parser.add_argument('--output-path', type=str, default='/home/dawars/personal_projects/sdfstudio/data/heritage/',
                         help="path to where output images should be stored (output_path/{scene}/{depth/normal}")
 
     args = parser.parse_args()
+
+    # download to args.pretrained_models
+    # gdown '1iJjV9rkdeLvsTU9x3Vx8vwZUg-sSQ9nm&confirm=t'  # omnidata normals (v1)
+    # gdown '1wNxVO4vVbDEMEpnAi_jwQObf2MFodcBR&confirm=t'  # omnidata normals (v2)
+    # gdown '1UxUDbEygQ-CMBjRKACw_Xdj4RkDjirB5&confirm=t'  # omnidata depth (v1)
+    # gdown '1Jrh-bRnJEjyMCS7f-WsaFlccfPjJPPHI&confirm=t'  # omnidata depth (v2)
 
     root_dir = args.pretrained_models
     omnidata_path = args.omnidata_path
