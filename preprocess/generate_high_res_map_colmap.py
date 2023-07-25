@@ -4,8 +4,6 @@ from pathlib import Path
 import argparse
 import math
 from PIL import Image, ImageOps
-from PIL.Image import Resampling
-from torchvision.transforms import InterpolationMode
 
 from tqdm import tqdm
 import numpy as np
@@ -16,8 +14,11 @@ from torchvision import transforms
 
 DEBUG = True
 
-map_location = (lambda storage, loc: storage.cuda()) if torch.cuda.is_available() else torch.device('cpu')
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+map_location = (lambda storage, loc: storage.cuda()) if torch.cuda.is_available() else torch.device("cpu")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+output_patch_path = Path("/home/dawars/personal_projects/sdfstudio/data/heritage/nepszinhaz_internal/patches")
+output_patch_path.mkdir(exist_ok=True)
 
 # copy from MiDaS
 def compute_scale_and_shift(prediction, target, mask):
@@ -186,7 +187,7 @@ size2 = size // 2
 offset = size // offset_fraction  # a lot of overlap, slower but pixel perfect division, bad global value distribution
 
 
-def inference_patch(image: Image, device: torch.device = 'cpu'):
+def inference_patch(image: Image, device: torch.device = "cpu"):
     """
     image: 3 channel PIL Image
     """
@@ -209,7 +210,7 @@ def process_image(image_path: Path, out_dir: Path):
     out_path_depth = out_dir / "depth" / image_name
 
     patches = {}
-    _image = Image.open(image_path).convert('RGB')
+    _image = Image.open(image_path).convert("RGB")
     orig_size = _image.size
 
     _image.thumbnail((1400, 1400))
@@ -235,7 +236,7 @@ def process_image(image_path: Path, out_dir: Path):
     for j in range(y - 1):
         for i in range(x - 1):
             # crop images
-            image_patch = image_cv[j * offset:j * offset + size, i * offset:i * offset + size, :]
+            image_patch = image_cv[j * offset : j * offset + size, i * offset : i * offset + size, :]
             # if DEBUG:
             #     patches[(i, j)] = image_patch
 
@@ -265,7 +266,7 @@ def process_image(image_path: Path, out_dir: Path):
     # save middle file for alignments
     start_y = max(0, offset * (y // offset_fraction) - size2)
     start_x = max(0, offset * (x // offset_fraction) - size2)
-    image_middle = image_cv[start_y:start_y + size, start_x:start_x + size]
+    image_middle = image_cv[start_y : start_y + size, start_x : start_x + size]
     depth_middle, normal_middle = inference_patch(image_middle)
 
     depths_row = []
@@ -312,10 +313,10 @@ def process_image(image_path: Path, out_dir: Path):
     if orig_size != (W, H):
         depth_top = np.array(Image.fromarray(depth_top).resize(orig_size, resample=Resampling.BICUBIC))
 
-    if DEBUG:  # todo different dir
-        plt.imsave(out_path_depth.with_suffix('.viz.png'), depth_top, cmap='viridis')
+    if DEBUG:
+        plt.imsave(out_path_depth.with_suffix(".viz.png"), depth_top, cmap="viridis")
 
-    np.save(out_path_depth.with_suffix('.npy'), depth_top)
+    np.save(out_path_depth.with_suffix(".npy"), depth_top)
     depth_top_cv = np.uint16(depth_top * (2 ** 16 - 1))
     cv2.imwrite(str(out_path_depth.with_suffix('.png')), depth_top_cv)
 
@@ -359,35 +360,35 @@ def process_image(image_path: Path, out_dir: Path):
     start_y = max(0, offset * (y // offset_fraction) - size2)
     start_x = max(0, offset * (x // offset_fraction) - size2)
     R = best_fit_transform(
-        normal_top[:, start_y:start_y + size, start_x:start_x + size].reshape(3, -1).T,
-        mid_normal.reshape(3, -1).T)
+        normal_top[:, start_y : start_y + size, start_x : start_x + size].reshape(3, -1).T, mid_normal.reshape(3, -1).T, mask.T
+    )
     normal_top = (R @ normal_top.reshape(3, -1)).reshape(normal_top.shape)
 
     normal_top = normal_top[:, :H, :W]
-    normal_top = (normal_top + 1.) / 2.
+    normal_top = (normal_top + 1.0) / 2.0
     normal_top = np.transpose(normal_top, [1, 2, 0])  # HWC float opencv
 
     if orig_size != (W, H):  # todo test this
         normal_top = cv2.resize(normal_top, orig_size, interpolation=cv2.INTER_NEAREST)
 
     if DEBUG:
-        cv2.imwrite(str(out_path_normal.with_suffix('.png')), np.uint8(normal_top*255))  # todo rgb or bgr?
+        cv2.imwrite(str(out_path_normal.with_suffix(".png")), np.uint8(normal_top[..., [2, 1, 0]] * 255))
         # normal_top.save(out_path_normal.with_suffix('.png'))
 
     normal_top = np.transpose(normal_top, [2, 0, 1])  # HWC -> CHW
-    np.save(out_path_normal.with_suffix('.npy'), normal_top)  # [0,1] float
+    np.save(out_path_normal.with_suffix(".npy"), normal_top)  # [0,1] float
 
 
 def load_model(mode: str):
     from modules.midas.dpt_depth import DPTDepthModel
 
     if mode in ["normal", "depth"]:
-        pretrained_weights_path = root_dir + f'omnidata_dpt_{mode}_v2.ckpt'
-        model = DPTDepthModel(backbone='vitb_rn50_384', num_channels=1 if mode == 'depth' else 3)  # DPT Hybrid
+        pretrained_weights_path = root_dir + f"omnidata_dpt_{mode}_v2.ckpt"
+        model = DPTDepthModel(backbone="vitb_rn50_384", num_channels=1 if mode == "depth" else 3)  # DPT Hybrid
         checkpoint = torch.load(pretrained_weights_path, map_location=map_location)
-        if 'state_dict' in checkpoint:
+        if "state_dict" in checkpoint:
             state_dict = {}
-            for k, v in checkpoint['state_dict'].items():
+            for k, v in checkpoint["state_dict"].items():
                 state_dict[k[6:]] = v
         else:
             state_dict = checkpoint
@@ -398,15 +399,13 @@ def load_model(mode: str):
 
 
 def process_scene(data_root: Path, scene: str, out_path_prefix: Path):
-    """
-
-    """
+    """ """
     print(f"Processing scene {scene}")
 
     image_dir = "dense/images"  # relative dir to data_root/{scene}/
     paths = []
 
-    extensions = ['jpg', 'jpeg', 'JPG', 'JPEG', 'png', 'PNG']
+    extensions = ["jpg", "jpeg", "JPG", "JPEG", "png", "PNG"]
     for ext in extensions:
         paths.extend((data_root / scene / image_dir).glob(f"[!.]*.{ext}"))
     paths = sorted(paths)
@@ -428,21 +427,28 @@ def main(args):
         process_scene(data_root, scene, out_path_prefix)
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Visualize output for depth or surface normals')
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Visualize output for depth or surface normals")
 
-    parser.add_argument('--omnidata-path', default='../omnidata/omnidata_tools/torch/',
-                        help="path to omnidata model")
+    parser.add_argument("--omnidata-path", default="../omnidata/omnidata_tools/torch/", help="path to omnidata model")
 
-    parser.add_argument('--pretrained-models', default='../omnidata/omnidata_tools/torch/pretrained_models/',
-                        help="path to pretrained models")
+    parser.add_argument(
+        "--pretrained-models", default="../omnidata/omnidata_tools/torch/pretrained_models/", help="path to pretrained models"
+    )
 
-    parser.add_argument('--input-path', type=str, default='/home/dawars/personal_projects/sdfstudio/data/heritage/',
-                        help="Path to root of phototourism datasets")
+    parser.add_argument(
+        "--input-path",
+        type=str,
+        default="/home/dawars/personal_projects/sdfstudio/data/heritage/",
+        help="Path to root of phototourism datasets",
+    )
 
-    parser.add_argument('--output-path', type=str, default='/home/dawars/personal_projects/sdfstudio/data/heritage/',
-                        help="path to where output images should be stored (output_path/{scene}/{depth/normal}")
-
+    parser.add_argument(
+        "--output-path",
+        type=str,
+        default="/home/dawars/personal_projects/sdfstudio/data/heritage/",
+        help="path to where output images should be stored (output_path/{scene}/{depth/normal}",
+    )
     args = parser.parse_args()
 
     # download to args.pretrained_models
@@ -459,9 +465,9 @@ if __name__ == '__main__':
 
     net_normal = load_model("normal")
     net_depth = load_model("depth")
-    trans_normal = transforms.Compose([get_transform('rgb', image_size=None)])
-    trans_depth = transforms.Compose([transforms.ToTensor(),
-                                      transforms.Normalize(mean=0.5, std=0.5)])
+
+    trans_normal = transforms.Compose([get_transform("rgb", image_size=None)])
+    trans_depth = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean=0.5, std=0.5)])
     trans_topil = transforms.ToPILImage()
 
     main(args)
