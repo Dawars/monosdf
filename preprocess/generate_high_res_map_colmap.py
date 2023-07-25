@@ -212,8 +212,30 @@ def process_image(image_path: Path, out_dir: Path):
     patches = {}
     _image = Image.open(image_path).convert("RGB")
     orig_size = _image.size
+    w, h = orig_size
 
-    _image.thumbnail((1400, 1400))
+    # rescale to input size to get consistent global depth/normal values
+    # anchor_image = _image.resize((size, size))
+    anchor_image = _image.resize((size, size))  # center crop
+    depth_cv = cv2.cvtColor(np.array(anchor_image), cv2.COLOR_RGB2BGR)
+    depth_anchor_, normal_anchor_ = inference_patch(depth_cv)
+
+    import matplotlib.pyplot as plt
+
+    # plt.imshow((depth_anchor_.cpu().numpy()[-1]), cmap="gray")
+    # plt.show()
+    depth_anchor = trans_topil((255 * depth_anchor_.cpu().numpy()[0]).astype(np.uint8))
+    normal_anchor = torch.nn.functional.interpolate(normal_anchor_, (h, w)).cpu()[0].permute(1, 2, 0)
+
+    cv2.imwrite(str(out_path_normal.with_suffix(".png")), np.uint8(normal_anchor[..., [2, 1, 0]] * 255))
+    # plt.imshow(normal_anchor)
+    # plt.show()
+
+    normal_lowres = np.transpose(normal_anchor, [2, 0, 1])  # HWC -> CHW
+    np.save(out_path_normal.with_suffix(".npy"), normal_lowres)  # [0,1] float
+    return
+
+    # resize back
     W, H = _image.size
 
     x = math.ceil(W / offset)
@@ -421,7 +443,7 @@ def main(args):
     data_root = Path(args.input_path)
 
     out_path_prefix = Path(args.output_path)  # result will be saved to path/scene/{normal|depth}
-    scenes = ['brandenburg_gate', 'pantheon_exterior']
+    scenes = ["nepszinhaz_internal"]  # , 'pantheon_exterior']
 
     for scene in scenes:
         process_scene(data_root, scene, out_path_prefix)
