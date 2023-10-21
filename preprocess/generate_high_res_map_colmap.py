@@ -17,8 +17,8 @@ DEBUG = True
 map_location = (lambda storage, loc: storage.cuda()) if torch.cuda.is_available() else torch.device("cpu")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-output_patch_path = Path("/home/dawars/personal_projects/sdfstudio/data/heritage/nepszinhaz_internal/patches")
-output_patch_path.mkdir(exist_ok=True)
+# output_patch_path = Path("/home/dawars/personal_projects/sdfstudio/data/heritage/national_theater_internal_disk_lightglue/patches")
+# output_patch_path.mkdir(exist_ok=True)
 
 # copy from MiDaS
 def compute_scale_and_shift(prediction, target, mask):
@@ -204,9 +204,26 @@ def inference_patch(image: Image, device: torch.device = "cpu"):
         return depth, normal
 
 
+def save_depth_image(depth_image, output_path: Path):
+    depth_image = (depth_image - depth_image.min()) / (depth_image.max() - depth_image.min())
+    # depth_top = depth_top[:, :H, :W]
+    plt.imsave(output_path.with_suffix(".png"), depth_image[0].numpy(), cmap="viridis")
+    np.save(output_path.with_suffix(".npy"), depth_image.detach().cpu().numpy()[0])
+
+
+def save_normal_image(normal_image, output_path: Path):
+    normal_image = normal_image.numpy()
+    # normal_top = normal_top[:, :H, :W]
+    # todo zero out sky
+
+    plt.imsave(output_path.with_suffix(".png"), np.moveaxis(normal_image, [0, 1, 2], [2, 0, 1]))
+    np.save(output_path.with_suffix(".npy"), normal_image)
+
+
 def process_image(image_path: Path, out_dir: Path):
     image_name = image_path.name
     out_path_normal = out_dir / "normal" / image_name
+    out_path_normal_vis = out_dir / "normal_vis" / image_name
     out_path_depth = out_dir / "depth" / image_name
 
     patches = {}
@@ -227,7 +244,7 @@ def process_image(image_path: Path, out_dir: Path):
     depth_anchor = trans_topil((255 * depth_anchor_.cpu().numpy()[0]).astype(np.uint8))
     normal_anchor = torch.nn.functional.interpolate(normal_anchor_, (h, w)).cpu()[0].permute(1, 2, 0)
 
-    cv2.imwrite(str(out_path_normal.with_suffix(".png")), np.uint8(normal_anchor[..., [2, 1, 0]] * 255))
+    cv2.imwrite(str(out_path_normal_vis.with_suffix(".png")), np.uint8(normal_anchor[..., [2, 1, 0]] * 255))
     # plt.imshow(normal_anchor)
     # plt.show()
 
@@ -262,26 +279,40 @@ def process_image(image_path: Path, out_dir: Path):
             # if DEBUG:
             #     patches[(i, j)] = image_patch
 
-                # image_patch.save()
+            # image_patch.save()
             # inference
             depth, normal = inference_patch(image_patch)
+
+            # normal_ = normal[0].numpy()
+            # depth_ = depth.numpy()
+            # normal2d3d = normal_ * 2 - 1
+            # norm_len = np.linalg.norm(normal2d3d, axis=0)
+            # mask = norm_len < normal_threshold  # mask for uncertain normals (sky)
+            # backfacing = np.dot(normal2d3d.transpose(1, 2, 0).reshape(-1, 3), np.array([0., 0., 1.])).reshape(size, size)
+
+            # print(f"{norm_len.min()=} {norm_len.max()=}")
+            # normal_[:, mask] = 0.
+            # depth_[:, mask] = 0.
+            # plt.imsave(output_patch_path / f"{image_path.with_suffix('').name}_{i}_{j}.png",
+            #            np.moveaxis(normal_, [0, 1, 2], [2, 0, 1]))
+            # plt.imsave(output_patch_path / f"{image_path.with_suffix('').name}_{i}_{j}_back.png", backfacing,
+            #            cmap='inferno', vmin=-1.0, vmax=1.0)  # not looking backwards
+            # plt.imsave(output_patch_path / f"{image_path.with_suffix('').name}_{i}_{j}_norm.png", norm_len,
+            #            cmap='viridis', vmin=0.0, vmax=1.0)
+
+            # print(f"{depth.min()=} {depth.max()=}")  # scale is 0.512m ????
+            # plt.imsave(output_patch_path / f"{image_path.with_suffix('').name}_{i}_{j}_depth.png", depth_[0], cmap='viridis', vmin=0.0, vmax=0.1)
+
+            # normal[:, :, mask] = 0.5
+            # depth[:, mask] = 0.
 
             depth_patches[(i, j)] = depth
             normal_patches[(i, j)] = normal[0]
 
     if is_too_small:
-        depth_top = depth_patches[(0, 0)]
-        depth_top = (depth_top - depth_top.min()) / (depth_top.max() - depth_top.min())
-        depth_top = depth_top[:, :H, :W]
-
-        plt.imsave(out_path_depth.with_suffix('.png'), depth_top[0].numpy(), cmap='viridis')
-        np.save(out_path_depth.with_suffix('.npy'), depth_top.detach().cpu().numpy()[0])
-
-        normal_top = normal_patches[(0, 0)].numpy()
-        normal_top = normal_top[:, :H, :W]
-
-        plt.imsave(out_path_normal.with_suffix('.png'), np.moveaxis(normal_top, [0, 1, 2], [2, 0, 1]))
-        np.save(out_path_normal.with_suffix('.npy'), normal_top)
+        # todo save anchor
+        save_depth_image(depth_patches[(0, 0)], out_path_depth)
+        save_normal_image(normal_patches[(0, 0)], out_path_normal)
 
         return
 
@@ -375,9 +406,8 @@ def process_image(image_path: Path, out_dir: Path):
         s1 += offset
 
     # align to middle part
-    mid_normal = normal_middle
-    mid_normal = mid_normal * 2. - 1.
-    mid_normal = mid_normal / (np.linalg.norm(mid_normal, axis=0) + 1e-15)[None]
+    mid_normal = normal_middle[0]
+    mid_normal = mid_normal * 2.0 - 1.0  # todo zero mask
 
     start_y = max(0, offset * (y // offset_fraction) - size2)
     start_x = max(0, offset * (x // offset_fraction) - size2)
@@ -443,7 +473,7 @@ def main(args):
     data_root = Path(args.input_path)
 
     out_path_prefix = Path(args.output_path)  # result will be saved to path/scene/{normal|depth}
-    scenes = ["nepszinhaz_internal"]  # , 'pantheon_exterior']
+    scenes = ["semperoper"]  # , 'pantheon_exterior']
 
     for scene in scenes:
         process_scene(data_root, scene, out_path_prefix)
@@ -461,14 +491,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--input-path",
         type=str,
-        default="/home/dawars/personal_projects/sdfstudio/data/heritage/",
+        default="/media/dawars/Ventoy/dresden",
         help="Path to root of phototourism datasets",
     )
 
     parser.add_argument(
         "--output-path",
         type=str,
-        default="/home/dawars/personal_projects/sdfstudio/data/heritage/",
+        default="/media/dawars/Ventoy/dresden",
         help="path to where output images should be stored (output_path/{scene}/{depth/normal}",
     )
     args = parser.parse_args()
